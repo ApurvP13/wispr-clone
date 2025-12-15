@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+body {
+  background: transparent;
+  overflow: hidden; /* No scrollbars */
+}
+
+#root {
+  background: transparent;
+}
