@@ -6,58 +6,58 @@ import "./App.css";
 import { LoaderCircle } from "lucide-react";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { listen } from "@tauri-apps/api/event";
+import { useVoiceRecording } from "./hooks/useVoiceRecording";
+
+const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY as string;
 
 function App() {
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false); // Changed to false
+  const {
+    isRecording,
+    transcript,
+    isProcessing,
+    error,
+    startRecording,
+    stopRecording,
+  } = useVoiceRecording(DEEPGRAM_API_KEY);
 
   useEffect(() => {
-    let unlistenStart: (() => void) | undefined;
-    let unlistenStop: (() => void) | undefined;
-
     const setup = async () => {
       console.log("=== SETUP STARTING ===");
 
       try {
-        // Listen for recording started
-        unlistenStart = await listen<boolean>("recording_started", () => {
-          console.log("Recording started event received");
-          setIsRecording(true);
-          setIsProcessing(false);
-        });
-
-        // Listen for recording stopped
-        unlistenStop = await listen<boolean>("recording_stopped", () => {
-          console.log("Recording stopped event received");
-          setIsRecording(false);
-          setIsProcessing(true);
-        });
-
-        console.log("Event listeners set up");
-
-        // Register hotkey
-        console.log("Attempting to register hotkey Alt+Shift+Space...");
+        // Register Alt+Space hotkey for recording
         await register("Alt+Space", async () => {
-          console.log("🔥 HOTKEY PRESSED! 🔥");
+          console.log("🔥 Alt+Space PRESSED! 🔥");
           try {
+            // Show window
             await invoke("show_recording_pill");
-            console.log("Show Invoke successful");
+
+            // Start recording
+            await startRecording();
           } catch (e) {
-            console.error("Invoke failed:", e);
+            console.error("Failed:", e);
           }
         });
 
+        // Keep Alt+Shift+Space for testing transcript UI
         await register("Alt+Shift+Space", async () => {
-          console.log("🔥 HOTKEY PRESSED! 🔥");
+          console.log("🔥 Alt+Shift+Space PRESSED (Test) 🔥");
           try {
             await invoke("show_transcript_pill");
-            console.log("Transcript Invoke successful");
           } catch (e) {
-            console.error("Invoke failed:", e);
+            console.error("Failed:", e);
           }
         });
 
-        console.log("✅ Hotkey registered successfully!");
+        await register("Escape", async () => {
+          if (isRecording) {
+            console.log("🚫 Recording cancelled by user");
+            await stopRecording();
+            await invoke("hide_recording_pill");
+          }
+        });
+
+        console.log("✅ Hotkeys registered successfully!");
       } catch (error) {
         console.error("❌ Setup failed:", error);
       }
@@ -65,32 +65,38 @@ function App() {
 
     setup();
 
+    // Cleanup: unregister hotkeys when component unmounts
     return () => {
-      console.log("Cleanup running...");
-      if (unlistenStart) unlistenStart();
-      if (unlistenStop) unlistenStop();
-      unregister("Alt+Shift+Space").catch((e) => {
-        console.error("Unregister failed:", e);
-      });
+      console.log("Cleanup: unregistering hotkeys...");
+      unregister("Alt+Space").catch(console.error);
+      unregister("Alt+Shift+Space").catch(console.error);
     };
-  }, []);
+  }, []); // Empty dependency array - run once on mount
 
   return (
     <div className="w-screen bg-transparent flex h-screen text-white items-center justify-center">
       {/* Recording Animation */}
       {isRecording && (
-        <div className="flex items-center justify-center gap-2 bg-red-500 rounded-full px-6 py-4">
-          <Lottie
-            animationData={recordingAnimation}
-            style={{ width: 50, height: 50 }}
-          />
-          <span className="font-semibold">Recording...</span>
+        <div className="flex flex-col items-center gap-3 bg-gradient-to-r from-red-500 to-pink-500 rounded-full px-8 py-5 shadow-2xl">
+          <div className="flex items-center gap-3">
+            <Lottie
+              animationData={recordingAnimation}
+              style={{ width: 40, height: 40 }}
+              loop={true}
+            />
+            <span className="font-semibold text-lg">Listening...</span>
+          </div>
+          {transcript && (
+            <p className="text-sm text-white/90 max-w-md text-center">
+              {transcript}
+            </p>
+          )}
         </div>
       )}
 
       {/* Processing Loader */}
       {isProcessing && (
-        <div className="flex items-center justify-evenly w-full h-full gap-2 bg-blue-500  px-6 py-4">
+        <div className="flex items-center gap-3 bg-blue-500 rounded-full px-8 py-5 shadow-2xl">
           <div className="animate-spin">
             <LoaderCircle className="size-6" />
           </div>
@@ -98,10 +104,17 @@ function App() {
         </div>
       )}
 
-      {/* Idle State */}
-      {!isRecording && !isProcessing && (
-        <div className="bg-white w-full h-full text-gray-800 rounded-full px-6 py-4">
-          <span className="font-semibold">Press Option+Space</span>
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-500 text-white rounded-full px-8 py-5 shadow-2xl">
+          <span className="font-semibold">Error: {error}</span>
+        </div>
+      )}
+
+      {/* Idle/Ready State */}
+      {!isRecording && !isProcessing && !error && (
+        <div className="bg-white text-gray-800 rounded-full px-8 py-5 shadow-2xl">
+          <span className="font-semibold">Press Option+Space to speak</span>
         </div>
       )}
     </div>
