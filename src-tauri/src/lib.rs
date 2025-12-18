@@ -1,8 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
-use tauri::Manager;
-
-
+use tauri::{AppHandle, Manager, Runtime};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -23,7 +22,7 @@ fn show_recording_pill(app: tauri::AppHandle) -> Result<(), String> {
 
     window.center().map_err(|e| e.to_string())?;
     window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
+
 
     println!("Window shown!");
     
@@ -43,7 +42,7 @@ fn show_transcript_pill(app: tauri::AppHandle) -> Result<(), String> {
 
     window.center().map_err(|e| e.to_string())?;
     window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
+
 
     Ok(())
 }
@@ -60,37 +59,40 @@ fn hide_recording_pill(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn copy_and_paste_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
-    println!("📋 Copying text: {}", text);
-    
-    // Write to clipboard
-    app.clipboard()
-        .write_text(text)
+async fn copy_and_paste_text(app: AppHandle, text: String) -> Result<(), String> {
+    // Write to clipboard (Standard Tauri API)
+    app.clipboard().write_text(text.clone())
         .map_err(|e| e.to_string())?;
-    
-    println!("✅ Text copied to clipboard");
-    
-    // Simulate Cmd+V (macOS) to paste
+
+    // 2. Use get_webview_window for Tauri v2
+    // 3. Add <tauri::Wry> or use a generic R to help compiler infer the type
+    if let Some(window) = app.get_webview_window("main") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+
+    // Small delay to let focus shift back to the target app
+    std::thread::sleep(std::time::Duration::from_millis(150));
+
     #[cfg(target_os = "macos")]
     {
         use std::process::Command;
-        
-        // Use osascript to simulate paste
         let script = r#"
             tell application "System Events"
                 keystroke "v" using command down
             end tell
         "#;
         
-        Command::new("osascript")
+        let output = Command::new("osascript")
             .arg("-e")
             .arg(script)
             .output()
-            .map_err(|e| format!("Failed to paste: {}", e))?;
-        
-        println!("✅ Paste command sent");
+            .map_err(|e| format!("Process error: {}", e))?;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        }
     }
-    
+
     Ok(())
 }
 
@@ -101,9 +103,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
-            greet, 
-            show_recording_pill, 
+            greet,
+            show_recording_pill,
             show_transcript_pill,
             hide_recording_pill,
             copy_and_paste_text

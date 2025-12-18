@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { DeepgramService, TranscriptionCallbacks } from "../services/deepgram";
 import { AudioService } from "../services/audio";
 
@@ -10,16 +11,31 @@ export function useVoiceRecording(apiKey: string) {
 
   const deepgramRef = useRef<DeepgramService | null>(null);
   const audioServiceRef = useRef<AudioService>(new AudioService());
-  const hasEndedRef = useRef(false); // Add this to prevent double-ending
+  const hasEndedRef = useRef(false);
+  const isStartingRef = useRef(false); // Prevent double-start
 
   const startRecording = async () => {
+    // Prevent starting if already recording or starting
+    if (isStartingRef.current || isRecording) {
+      console.log("⚠️ Already recording or starting, ignoring");
+      return;
+    }
+
+    isStartingRef.current = true;
+
     try {
+      // Clean up any existing connections first
+      if (deepgramRef.current) {
+        console.log("🧹 Cleaning up old connection");
+        await deepgramRef.current.stop();
+        deepgramRef.current = null;
+      }
+
       setError(null);
       setTranscript("");
       setIsRecording(true);
-      hasEndedRef.current = false; // Reset the flag
+      hasEndedRef.current = false;
 
-      // Setup callbacks
       const callbacks: TranscriptionCallbacks = {
         onTranscript: (text, isFinal) => {
           setTranscript(text);
@@ -27,7 +43,6 @@ export function useVoiceRecording(apiKey: string) {
         },
 
         onSpeechEnd: async (finalText) => {
-          // Prevent duplicate calls
           if (hasEndedRef.current) {
             console.log("⚠️ Speech end already handled, ignoring");
             return;
@@ -36,42 +51,55 @@ export function useVoiceRecording(apiKey: string) {
           hasEndedRef.current = true;
           console.log("🎯 Speech ended, final text:", finalText);
 
-          // IMPORTANT: Stop recording immediately
+          // Stop recording
           audioServiceRef.current.stopRecording();
           await deepgramRef.current?.stop();
+          deepgramRef.current = null; // Clear reference
 
           setIsRecording(false);
           setIsProcessing(true);
 
-          // Here you would:
-          // 1. Copy to clipboard
-          // 2. Paste into active window
-          // 3. Hide the pill window
+          // Copy to clipboard and paste
+          try {
+            await invoke("copy_and_paste_text", { text: finalText });
+            console.log("✅ Text copied and pasted!");
 
-          setTimeout(() => {
+            // Wait a bit then hide window and reset
+            setTimeout(async () => {
+              await invoke("hide_recording_pill");
+              setIsProcessing(false);
+              setTranscript("");
+              isStartingRef.current = false; // Allow next recording
+            }, 1000);
+          } catch (err) {
+            console.error("Failed to copy/paste:", err);
+            setError("Failed to paste text");
             setIsProcessing(false);
-            // Cleanup after processing
-          }, 1000);
+            isStartingRef.current = false;
+          }
         },
 
         onError: (err) => {
+          console.error("Recording error:", err);
           setError(err.message);
           setIsRecording(false);
+          isStartingRef.current = false;
         },
       };
 
-      // Initialize Deepgram
       deepgramRef.current = new DeepgramService(apiKey, callbacks);
       await deepgramRef.current.start();
 
-      // Start audio recording
       await audioServiceRef.current.startRecording((audioData) => {
         deepgramRef.current?.sendAudio(audioData);
       });
+
+      isStartingRef.current = false;
     } catch (err) {
       console.error("Failed to start recording:", err);
       setError("Failed to start recording");
       setIsRecording(false);
+      isStartingRef.current = false;
     }
   };
 
@@ -79,8 +107,10 @@ export function useVoiceRecording(apiKey: string) {
     console.log("🛑 Manually stopping recording");
     audioServiceRef.current.stopRecording();
     await deepgramRef.current?.stop();
+    deepgramRef.current = null;
     setIsRecording(false);
     hasEndedRef.current = false;
+    isStartingRef.current = false;
   };
 
   return {

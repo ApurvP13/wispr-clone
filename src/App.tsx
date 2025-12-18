@@ -5,7 +5,6 @@ import recordingAnimation from "./assets/recordingAnimation.json";
 import "./App.css";
 import { LoaderCircle } from "lucide-react";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import { listen } from "@tauri-apps/api/event";
 import { useVoiceRecording } from "./hooks/useVoiceRecording";
 
 const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY as string;
@@ -77,17 +76,18 @@ function App() {
     <div className="w-screen bg-transparent flex h-screen text-white items-center justify-center">
       {/* Recording Animation */}
       {isRecording && (
-        <div className="flex flex-col items-center gap-3 bg-gradient-to-r from-red-500 to-pink-500 rounded-full px-8 py-5 shadow-2xl">
-          <div className="flex items-center gap-3">
-            <Lottie
-              animationData={recordingAnimation}
-              style={{ width: 40, height: 40 }}
-              loop={true}
-            />
-            <span className="font-semibold text-lg">Listening...</span>
-          </div>
+        <div className="flex flex-col items-center gap-3 w-full bg-neutral-900 px-8 py-5 shadow-2xl">
+          {!transcript && (
+            <div className="flex items-center gap-3">
+              <Lottie
+                animationData={recordingAnimation}
+                style={{ width: 80, height: 80 }}
+                loop={true}
+              />
+            </div>
+          )}
           {transcript && (
-            <p className="text-sm text-white/90 max-w-md text-center">
+            <p className="text-sm text-neutral-700 overflow-hidden text-balance w-full text-center">
               {transcript}
             </p>
           )}

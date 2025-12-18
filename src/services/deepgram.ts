@@ -28,7 +28,7 @@ export class DeepgramService {
         model: "nova-2",
         interim_results: true,
         smart_format: true,
-        endpointing: 800, // 300ms pause for speech_final
+        endpointing: 1000, // 300ms pause for speech_final
         utterance_end_ms: 1500, // 1 second gap for UtteranceEnd
         punctuate: true,
         language: "en-US",
@@ -40,64 +40,38 @@ export class DeepgramService {
       });
 
       // Receiving transcripts
+      // Receiving transcripts
       this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
         const transcript = data.channel?.alternatives[0]?.transcript || "";
-
         if (!transcript) return;
 
         const isFinal = data.is_final;
         const speechFinal = data.speech_final;
 
-        console.log({
-          transcript,
-          isFinal,
-          speechFinal,
-        });
-
-        if (speechFinal) {
-          // Check if we already processed speech_final
-          if (this.hasSpeechFinal) {
-            console.log(
-              "⚠️ speech_final already processed, ignoring duplicate"
-            );
-            return;
-          }
-
-          console.log("✅ speech_final=true, closing connection");
-          this.hasSpeechFinal = true;
+        // 1. If it's a FINAL chunk, commit it to our permanent record
+        if (isFinal) {
           this.finalTranscript +=
             (this.finalTranscript ? " " : "") + transcript;
-
-          this.callbacks.onTranscript(this.finalTranscript, true);
-
-          // Close connection safely
-          if (this.connection && this.connection.getReadyState() === 1) {
-            try {
-              this.connection.finish();
-            } catch (err) {
-              console.warn("Error closing connection:", err);
-            }
-          }
-
-          this.callbacks.onSpeechEnd(this.finalTranscript);
-          return;
-        } else if (isFinal) {
-          // Only process if we haven't ended yet
-          if (this.hasSpeechFinal) return;
-
-          this.finalTranscript +=
-            (this.finalTranscript ? " " : "") + transcript;
+          this.interimTranscript = ""; // Clear interim because it's now final
           this.callbacks.onTranscript(this.finalTranscript, true);
         } else {
-          // Only process interim if we haven't ended yet
-          if (this.hasSpeechFinal) return;
-
+          // 2. Otherwise, it's INTERIM (predictive). Show it but don't save it.
           this.interimTranscript = transcript;
-          const combined =
+          const displayResult =
             this.finalTranscript +
             (this.finalTranscript ? " " : "") +
             this.interimTranscript;
-          this.callbacks.onTranscript(combined, false);
+          this.callbacks.onTranscript(displayResult, false);
+        }
+
+        // 3. speech_final is just our "Trigger" to finish the UX flow
+        if (speechFinal && !this.hasSpeechFinal) {
+          console.log("🎯 Sentence complete, finishing up...");
+          this.hasSpeechFinal = true;
+
+          // Crucial: Use the current state of finalTranscript
+          this.callbacks.onSpeechEnd(this.finalTranscript);
+          this.stop();
         }
       });
 
