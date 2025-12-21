@@ -256,21 +256,7 @@ Transcribed text is not saved or stored. Once pasted, it's gone unless the user 
 - **Single window**: Simpler codebase, easier to maintain, better performance
 - **macOS-first**: Focused on getting one platform right before expanding (YAGNI principle)
 
-## Contributing
 
-Contributions welcome! Areas for improvement:
-
-- [ ] Windows/Linux paste support
-- [ ] Offline transcription fallback
-- [ ] Transcript history
-- [ ] Customizable hotkeys
-- [ ] Multiple language support
-- [ ] Error recovery and retry logic
-- [ ] Settings/preferences UI
-
-## License
-
-[Add your license here]
 
 ## Acknowledgments
 
